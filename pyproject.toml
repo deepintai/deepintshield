@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepintshield"
+version = "1.1.0"
+description = "Unified Python SDK for routing chat, RAG, and agentic traffic through DeepintShield."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "DeepintShield" }]
+dependencies = [
+  "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.75.0"]
+anthropic = ["anthropic>=0.51.0"]
+bedrock = ["boto3>=1.37.0"]
+genai = ["google-genai>=1.12.1"]
+litellm = ["litellm>=1.67.0"]
+langchain = [
+  "langchain-core>=0.3.55",
+  "langchain-openai>=0.3.14",
+]
+langgraph = [
+  "langchain-core>=0.3.55",
+  "langgraph>=0.4.2",
+]
+pydanticai = ["pydantic-ai>=0.1.1"]
+all = [
+  "openai>=1.75.0",
+  "anthropic>=0.51.0",
+  "boto3>=1.37.0",
+  "google-genai>=1.12.1",
+  "litellm>=1.67.0",
+  "langchain-core>=0.3.55",
+  "langchain-openai>=0.3.14",
+  "langgraph>=0.4.2",
+  "pydantic-ai>=0.1.1",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "respx>=0.21",
+]
+
+[project.urls]
+Homepage = "https://app.deepintshield.com"
+Documentation = "https://app.deepintshield.com/docs"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
