@@ -13,12 +13,15 @@ Quick start
         messages=[{"role": "user", "content": "hello"}],
     )
 
-All traffic is routed to ``https://app.deepintshield.com``.
+Traffic defaults to ``https://app.deepintshield.com``. Override per-call with
+``DeepintShield(base_url=...)`` or via the ``DEEPINTSHIELD_BASE_URL``
+environment variable when using ``DeepintShield.from_env()``.
 """
 
 from .client import DeepintShield
 from .config import DEFAULT_BASE_URL, ShieldConfig
 from .errors import DeepintShieldBlockedError, DeepintShieldError
+from .mcp import ContentPart, MCPClient, MCPResult, Tool
 from .rag import allowed_chunk_ids, build_chunk, filter_chunks
 from .types import (
     NON_BLOCKING_DECISIONS,
@@ -36,6 +39,7 @@ DeepintShieldClient = DeepintShield
 __all__ = [
     "__version__",
     "DEFAULT_BASE_URL",
+    "ContentPart",
     "DeepintShield",
     "DeepintShieldClient",
     "DeepintShieldBlockedError",
@@ -43,9 +47,12 @@ __all__ = [
     "GuardrailDecision",
     "GuardrailResult",
     "GuardrailStage",
+    "MCPClient",
+    "MCPResult",
     "NON_BLOCKING_DECISIONS",
     "RetrievedChunk",
     "ShieldConfig",
+    "Tool",
     "ToolInvocation",
     "allowed_chunk_ids",
     "build_chunk",

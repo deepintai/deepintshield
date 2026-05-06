@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping
 
 import httpx
 
-from .config import DEFAULT_BASE_URL, ShieldConfig
+from .config import DEFAULT_BASE_URL, ShieldConfig, _normalize_base_url
 from .errors import DeepintShieldBlockedError, DeepintShieldError
 from .types import GuardrailResult, RetrievedChunk, ToolInvocation
 
@@ -20,12 +20,17 @@ class DeepintShield:
     >>> resp = shield.chat(model="gpt-4o-mini", messages=[...])
     >>> shield.rag.filter(query="...", chunks=[...])
     >>> shield.agent.evaluate_tool(name="read_file", args={"path": "/tmp"})
+
+    Pass ``base_url`` to target a self-hosted or staging gateway. The default
+    is ``https://app.deepintshield.com``; the environment variable
+    ``DEEPINTSHIELD_BASE_URL`` is honoured by ``DeepintShield.from_env()``.
     """
 
     def __init__(
         self,
         virtual_key: str | None = None,
         *,
+        base_url: str | None = None,
         timeout: float = 30.0,
         default_headers: Mapping[str, str] | None = None,
         app_name: str = "deepintshield",
@@ -34,7 +39,7 @@ class DeepintShield:
         requester_role: str = "member",
         persist: bool = True,
     ) -> None:
-        self.base_url = DEFAULT_BASE_URL
+        self.base_url = _normalize_base_url(base_url)
         self.virtual_key = (virtual_key or "").strip() or None
         self.timeout = timeout
         self.default_headers = dict(default_headers or {})
@@ -48,10 +53,12 @@ class DeepintShield:
         from .rag import RAGSurface
         from .agent import AgentSurface
         from .providers import ProviderRegistry
+        from .mcp import MCPClient
 
         self.rag = RAGSurface(self)
         self.agent = AgentSurface(self)
         self.providers = ProviderRegistry(self)
+        self.mcp = MCPClient(self)
 
     # ─────────────────────────── constructors / context ──────────────────────
 
@@ -60,6 +67,7 @@ class DeepintShield:
         cfg = ShieldConfig.from_env()
         return cls(
             virtual_key=cfg.virtual_key,
+            base_url=cfg.base_url,
             timeout=cfg.timeout,
             app_name=cfg.app_name,
             agent_name=cfg.agent_name,
@@ -72,6 +80,7 @@ class DeepintShield:
     def from_config(cls, config: ShieldConfig) -> "DeepintShield":
         return cls(
             virtual_key=config.virtual_key,
+            base_url=config.base_url,
             timeout=config.timeout,
             default_headers=config.default_headers,
             app_name=config.app_name,

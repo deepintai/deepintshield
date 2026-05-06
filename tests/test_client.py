@@ -15,6 +15,19 @@ def test_defaults_to_production_base_url():
     assert shield.virtual_key == "sk-bf-1"
 
 
+def test_explicit_base_url_overrides_default():
+    shield = DeepintShield(virtual_key="sk-bf-1", base_url="https://gateway.example.com/")
+    assert shield.base_url == "https://gateway.example.com"
+    assert shield.openai_base_url() == "https://gateway.example.com/openai"
+
+
+def test_from_env_honours_base_url(monkeypatch):
+    monkeypatch.setenv("DEEPINTSHIELD_VIRTUAL_KEY", "sk-bf-env")
+    monkeypatch.setenv("DEEPINTSHIELD_BASE_URL", "https://staging.deepintshield.com")
+    shield = DeepintShield.from_env()
+    assert shield.base_url == "https://staging.deepintshield.com"
+
+
 def test_headers_include_virtual_key():
     shield = DeepintShield(virtual_key="sk-bf-1")
     headers = shield.headers()

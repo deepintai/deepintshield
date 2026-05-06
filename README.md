@@ -7,7 +7,9 @@ Google GenAI / LangChain / LangGraph / LiteLLM / PydanticAI code while
 automatically routing every request through the DeepintShield gateway for
 policy enforcement, guardrails, RAG filtering, and agentic tool control.
 
-All traffic is routed to **`https://app.deepintshield.com`**. Set
+Traffic defaults to **`https://app.deepintshield.com`**. Self-hosted or
+staging deployments can override the gateway with `base_url=` (or the
+`DEEPINTSHIELD_BASE_URL` environment variable). Set
 `DEEPINTSHIELD_VIRTUAL_KEY` and you're done.
 
 ---
@@ -20,10 +22,11 @@ pip install 'deepintshield[openai]'             # + OpenAI SDK
 pip install 'deepintshield[anthropic]'
 pip install 'deepintshield[bedrock]'
 pip install 'deepintshield[genai]'
-pip install 'deepintshield[langchain]'
+pip install 'deepintshield[langchain]'           # also ships the MCP→LangChain adapter
 pip install 'deepintshield[langgraph]'
 pip install 'deepintshield[litellm]'
 pip install 'deepintshield[pydanticai]'
+pip install 'deepintshield[mcp]'                # MCP utilities only
 pip install 'deepintshield[all]'                # everything
 ```
 
@@ -31,6 +34,8 @@ pip install 'deepintshield[all]'                # everything
 
 ```bash
 export DEEPINTSHIELD_VIRTUAL_KEY="sk-..."
+# Optional — point at a self-hosted or staging gateway.
+export DEEPINTSHIELD_BASE_URL="https://gateway.example.com"
 ```
 
 Or pass explicitly:
@@ -39,6 +44,12 @@ Or pass explicitly:
 from deepintshield import DeepintShield
 
 shield = DeepintShield(virtual_key="sk-...")
+
+# Self-hosted / staging override (default: https://app.deepintshield.com)
+shield = DeepintShield(
+    virtual_key="sk-...",
+    base_url="https://gateway.example.com",
+)
 ```
 
 ---
@@ -180,6 +191,108 @@ app = graph.compile()
 
 ---
 
+## MCP
+
+Generic MCP support — works with any server connected to your DeepintShield
+gateway. No per-server SDK code; the same `Tool` / `MCPClient` API serves
+DeepWiki, Context7, GitHub MCP, an internal one, and so on.
+
+### Direct call
+
+```python
+from deepintshield import DeepintShield
+
+shield = DeepintShield.from_env()
+result = shield.mcp.call(
+    server="DeepWiki",                       # case-sensitive client name from MCP Registry
+    tool="ask_question",                     # bare tool name (no prefix)
+    repoName="facebook/react",
+    question="What is Suspense?",
+)
+print(result.text)
+```
+
+### OpenAI tool-calling loop
+
+```python
+from deepintshield import DeepintShield, Tool
+
+shield = DeepintShield.from_env()
+openai = shield.openai()
+
+tools = [
+    Tool(server="DeepWiki", name="ask_question",
+         description="Ask a question about a public GitHub repository.",
+         schema={"type": "object",
+                 "properties": {"repoName": {"type": "string"},
+                                "question": {"type": "string"}},
+                 "required": ["repoName", "question"]}),
+]
+
+messages = [{"role": "user", "content": "Summarize facebook/react's reconciler."}]
+first = openai.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=messages,
+    tools=shield.mcp.to_openai(tools),
+    tool_choice="required",
+)
+assistant = first.choices[0].message
+messages.append(assistant.model_dump(exclude_none=True))
+messages.extend(shield.mcp.run_openai_tool_calls(assistant.tool_calls))
+
+final = openai.chat.completions.create(model="gpt-4o-mini", messages=messages)
+print(final.choices[0].message.content)
+```
+
+### Anthropic tool_use loop
+
+```python
+anthropic = shield.anthropic()
+
+response = anthropic.messages.create(
+    model="claude-3-5-sonnet-latest",
+    max_tokens=1024,
+    tools=shield.mcp.to_anthropic(tools),
+    messages=messages,
+)
+if response.stop_reason == "tool_use":
+    messages.append({"role": "assistant",
+                     "content": [b.model_dump() for b in response.content]})
+    messages.append({"role": "user",
+                     "content": shield.mcp.run_anthropic_tool_uses(response.content)})
+    final = anthropic.messages.create(
+        model="claude-3-5-sonnet-latest",
+        max_tokens=1024,
+        tools=shield.mcp.to_anthropic(tools),
+        messages=messages,
+    )
+```
+
+### LangChain / LangGraph
+
+```python
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+
+llm = shield.langchain(model="gpt-4o-mini")
+mcp_tools = shield.mcp.to_langchain(tools)            # ready-to-use BaseTool list
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer using the available DeepWiki tools."),
+    ("user", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+agent = create_tool_calling_agent(llm, mcp_tools, prompt)
+print(AgentExecutor(agent=agent, tools=mcp_tools).invoke(
+    {"input": "Summarize facebook/react's reconciler."}
+)["output"])
+```
+
+LangGraph reuses the same `mcp_tools` list — drop them into a `ToolNode`.
+
+---
+
 ## More examples
 
-See [examples/](examples/) for runnable per-provider chat, RAG, and agent scripts.
+See [examples/](examples/) for runnable per-provider chat, RAG, agent, and MCP
+scripts.
