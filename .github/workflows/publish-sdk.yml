@@ -1,0 +1,162 @@
+name: Publish SDK
+
+# Releases the `deepintshield` package to PyPI from THIS public repo (the SDK's
+# canonical home), so the package's release provenance points at the source
+# users can actually see. Trusted publishing (OIDC) — no API tokens. Configure a
+# PyPI trusted publisher for repo `deepintai/deepintshield`, workflow
+# `publish-sdk.yml`, environments `testpypi` and `pypi`. The `guard` job skips a
+# version that is already on the index, so a re-run is a no-op.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'README.md'
+      - '.github/workflows/publish-sdk.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Publish target
+        type: choice
+        options: [both, testpypi, pypi]
+        default: both
+
+concurrency:
+  group: publish-sdk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Skip if version already published
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      pypi_published: ${{ steps.meta.outputs.pypi_published }}
+      testpypi_published: ${{ steps.meta.outputs.testpypi_published }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Read version + check PyPI
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -E '^version' pyproject.toml | head -n1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "deepintshield version = $VERSION"
+
+          check() {
+            local index="$1"
+            if curl -fsSL "https://${index}/pypi/deepintshield/${VERSION}/json" >/dev/null 2>&1; then
+              echo "true"
+            else
+              echo "false"
+            fi
+          }
+          PYPI=$(check pypi.org)
+          TEST=$(check test.pypi.org)
+          echo "pypi_published=$PYPI" >> "$GITHUB_OUTPUT"
+          echo "testpypi_published=$TEST" >> "$GITHUB_OUTPUT"
+          echo "pypi=$PYPI testpypi=$TEST"
+
+  build:
+    name: Build sdist + wheel
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade build twine
+
+      - name: Build
+        run: |
+          rm -rf dist/ build/ src/*.egg-info
+          python -m build
+
+      - name: Validate metadata
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [guard, build]
+    if: |
+      needs.guard.outputs.testpypi_published == 'false' &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.target != 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/deepintshield/${{ needs.guard.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [guard, build, publish-testpypi]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.publish-testpypi.result == 'success' || needs.publish-testpypi.result == 'skipped') &&
+      needs.guard.outputs.pypi_published == 'false' &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.target != 'testpypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/deepintshield/${{ needs.guard.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  tag-release:
+    name: Tag git release
+    needs: [guard, publish-pypi]
+    if: needs.publish-pypi.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create + push tag (skip if exists)
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "tag v${VERSION} already exists — skipping"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "deepintshield ${VERSION}"
+          git push origin "v${VERSION}"
