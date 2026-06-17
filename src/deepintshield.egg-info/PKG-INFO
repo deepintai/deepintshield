@@ -1,13 +1,13 @@
 Metadata-Version: 2.4
 Name: deepintshield
-Version: 2.1.0
+Version: 2.3.0
 Summary: Unified Python SDK for routing chat, RAG, agentic tool-gating, identity, and MCP traffic through DeepintShield — drop-in across the top agentic frameworks.
 Author: DeepintShield
 License: Apache-2.0
 Project-URL: Homepage, https://app.deepintshield.com
 Project-URL: Documentation, https://app.deepintshield.com/docs
-Project-URL: Examples, https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield/examples
-Project-URL: Source, https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield
+Project-URL: Examples, https://github.com/deepintai/deepintshield/tree/main/examples
+Project-URL: Source, https://github.com/deepintai/deepintshield
 Keywords: llm,agent,security,guardrails,pep,pdp,agentic,deepintshield,entra,langgraph,crewai
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
@@ -313,24 +313,89 @@ runs `decide()` first and the verdict maps to a Python outcome — `ALLOW` runs
 the body, `MASK` redacts PII kwargs, `REQUIRE_APPROVAL` blocks for a human, and
 `DENY` raises `GuardrailDenied`.
 
+### Zero extra code — enforcement is automatic and non-bypassable
+
+The moment you construct `DeepintShield(...)`, the SDK installs guards for every
+agent framework you've imported (LangGraph, CrewAI, LlamaIndex, AutoGen,
+PydanticAI, the OpenAI Agents SDK, LiteLLM). After that, **compiling / building
+an agent yields an already-governed object** — you can't forget to gate it and
+you can't bypass it by invoking the un-governed one (there isn't one).
+
 ```python
-@shield.agentic.tool("db.write", recovery_cost="high")
+from langgraph.graph import StateGraph, START, END
+from deepintshield import DeepintShield, GuardrailDenied
+
+shield = DeepintShield.from_env()      # ← guards install here; that's the only line
+
+def crm_read(s):  ...                  # your plain tools/nodes, unchanged
+def admin_grant(s): ...
+
+g = StateGraph(State)
+g.add_node("read_step", crm_read)
+g.add_node("admin_step", admin_grant)
+...
+app = g.compile()                      # auto-governed — every node now gated by the PDP
+
+app.invoke({...})                      # a DENY raises GuardrailDenied before the node runs
+```
+
+If you import a framework *after* building the client, call
+`shield.agentic.enforce()` once to (re)install the guards.
+
+> **Security follows the implementation, not the label.** Each node/tool is
+> governed by its **function name** (`crm_read`), not the node label
+> (`read_step`), and the decision is bound to a fingerprint of the function's
+> **source** — so editing the body is detected and policies target `crm_read`.
+>
+> **Trust boundary:** these client guards are cooperative defense-in-depth. A
+> determined process can un-patch them or call a tool's raw function, so the
+> gateway (MCP / LLM in the call path) remains the authoritative boundary.
+
+### `govern()` — register + threat-scan + instrument (explicit, idempotent)
+
+`govern()` does everything the auto-guard does, explicitly: it **describes** the
+agent's declared tool surface, **registers** that blueprint with the server
+(which **threat-scans each tool's source** for RCE / shell-out / exfiltration —
+OWASP Agentic **T11 / T17** — server-side, ZDR), and **instruments** every call.
+
+```python
+app = shield.agentic.govern(app)       # idempotent — safe alongside the auto-guard
+```
+
+A tool whose source scans malicious is flagged (Agentic → Findings) and, when
+the workspace enables **Enforce code threat** (Rollout), denied — even if a
+policy would otherwise allow it. A tool called but never declared shows up as
+**ASI04 drift** under Agentic → Discovery.
+
+### `guard()` — LangChain callback / in-place instrument
+
+`shield.agentic.guard()` (no argument) returns a native LangChain callback
+handler; attaching it once gates *every* tool the agent calls — the framework
+supplies the tool name and the **gateway resolves the tier, policy, recovery
+cost and identity server-side**.
+
+```python
+guard = shield.agentic.guard()
+agent_executor.invoke({"input": "…"}, config={"callbacks": [guard]})
+```
+
+`guard(target)` auto-detects and instruments a framework object in place:
+
+```python
+shield.agentic.guard(compiled_graph)   # LangGraph — gate every tool node
+shield.agentic.guard(crewai_tools)     # CrewAI BaseTools
+shield.agentic.guard(openai_agent)     # OpenAI Agents FunctionTools
+shield.agentic.guard(pydantic_agent)   # PydanticAI agent
+```
+
+### Explicit decorator / decision probe
+
+```python
+@shield.agentic.tool("db.write")
 def write_ledger(row: dict) -> dict:
     return db.execute("INSERT INTO ledger …", row)
 
-# Or a direct decision probe:
 decision = shield.agentic.decide(tool="db.write", args={"amount": 12})
-```
-
-Wrap a whole framework's tools in one line:
-
-```python
-shield.agentic.langgraph(compiled_graph)   # gate every tool node
-shield.agentic.crewai(tools)               # gate CrewAI BaseTools
-shield.agentic.openai_agents(agent)        # gate FunctionTools on an Agent
-shield.agentic.llamaindex(tools)
-shield.agentic.autogen(agent)
-shield.agentic.pydanticai(agent)
 ```
 
 ```python
@@ -340,6 +405,28 @@ try:
     write_ledger({"amount": 1.2})
 except GuardrailDenied as e:
     log.warning("denied: %s (decision_id=%s)", e.reason, e.decision_id)
+```
+
+### Optional risk signals (OWASP Agentic gap operands)
+
+For threats only your app can observe, pass an ABAC signal on a `decide()` and
+author a policy on it (one-click templates ship under **Agentic → Templates**):
+
+| Signal | Threat | Policy operand |
+| --- | --- | --- |
+| `memory_integrity` | T1 Memory Poisoning | `memory_integrity eq true` |
+| `hallucination_risk` | T5 Cascading Hallucination | `hallucination_risk gte 0.8` |
+| `goal_drift` | T7 Misaligned & Deceptive | `goal_drift eq true` |
+| `comm_integrity` | T12 Agent Comm Poisoning | `comm_integrity eq true` |
+| `delegation_depth` | T14 Human Attacks on MAS | `delegation_depth gt 4` (server-computed) |
+
+```python
+from deepintshield import ContextBag, DelegationContext
+
+shield.agentic.decide(DelegationContext(
+    tool="ledger.post", virtual_key=shield.virtual_key,
+    context=ContextBag(hallucination_risk=0.91, goal_drift=True),
+))
 ```
 
 ### Agent identity (zero config)
@@ -568,5 +655,5 @@ the client.
 
 ## More examples
 
-See [examples/](https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield/examples) for runnable per-provider chat, RAG, agent, and MCP
+See [examples/](https://github.com/deepintai/deepintshield/tree/main/examples) for runnable per-provider chat, RAG, agent, and MCP
 scripts.
