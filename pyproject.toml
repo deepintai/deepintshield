@@ -64,8 +64,8 @@ dev = [
 [project.urls]
 Homepage = "https://app.deepintshield.com"
 Documentation = "https://app.deepintshield.com/docs"
-Examples = "https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield/examples"
-Source = "https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield"
+Examples = "https://github.com/deepintai/deepintshield/tree/main/examples"
+Source = "https://github.com/deepintai/deepintshield"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

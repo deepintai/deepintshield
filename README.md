@@ -584,5 +584,5 @@ the client.
 
 ## More examples
 
-See [examples/](https://github.com/deepintai/DeepintShieldFull/tree/develop/deepintshield/examples) for runnable per-provider chat, RAG, agent, and MCP
+See [examples/](https://github.com/deepintai/deepintshield/tree/main/examples) for runnable per-provider chat, RAG, agent, and MCP
 scripts.
