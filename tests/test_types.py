@@ -69,3 +69,12 @@ def test_guardrail_result_from_response_handles_dict_decision():
 def test_guardrail_result_from_response_defaults_allow_when_missing():
     result = GuardrailResult.from_response("input", {})
     assert result.decision == "allow"
+
+
+def test_guardrail_result_mode_defaults_empty_and_is_captured():
+    # Additive, non-breaking: absent mode -> "".
+    assert GuardrailResult(decision="allow", stage="input").mode == ""
+    assert GuardrailResult.from_response("input", {"result": {"decision": "allow"}}).mode == ""
+    # Captured and normalized when the gateway reports it.
+    result = GuardrailResult.from_response("output", {"result": {"decision": "block", "mode": "Shadow"}})
+    assert result.mode == "shadow"

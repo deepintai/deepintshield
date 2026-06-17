@@ -58,6 +58,11 @@ class GuardrailResult:
     stage: str
     reason: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
+    # Enforcement mode reported by the gateway: "sync"/"enforce" actually blocks,
+    # "shadow"/"async" reports the verdict without blocking. Empty when the
+    # gateway does not report it. Additive and optional — existing callers are
+    # unaffected.
+    mode: str = ""
 
     @property
     def allowed(self) -> bool:
@@ -78,4 +83,5 @@ class GuardrailResult:
             stage=stage,
             reason=(inner.get("reason") or "").strip(),
             raw=payload,
+            mode=(inner.get("mode") or "").strip().lower(),
         )

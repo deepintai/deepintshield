@@ -59,6 +59,17 @@ class DeepintShield:
         self.agent = AgentSurface(self)
         self.providers = ProviderRegistry(self)
         self.mcp = MCPClient(self)
+        # Agentic (PDP) surface is built lazily on first access so that
+        # constructing a DeepintShield never performs network I/O and never
+        # imports pydantic/azure unless agentic features are actually used.
+        self._agentic = None
+        # Install non-bypassable enforcement guards for any agent framework that
+        # is ALREADY imported (langgraph, crewai, litellm, …) so a compiled graph
+        # / built tool can't run ungoverned. Lazy engine ⇒ this does NOT build the
+        # agentic surface; it only patches frameworks the app actually uses. Safe
+        # no-op when none are present. Call ``shield.agentic.enforce()`` again if a
+        # framework is imported after the client is created.
+        self._install_agentic_guards()
 
     # ─────────────────────────── constructors / context ──────────────────────
 
@@ -170,6 +181,33 @@ class DeepintShield:
         from .providers.genai import build_client
         return build_client(self, passthrough=passthrough, **kwargs)
 
+    def genai_cached(
+        self,
+        *,
+        passthrough: bool = False,
+        ttl_seconds: int | None = None,
+        min_prefix_tokens: int | None = None,
+        **kwargs: Any,
+    ):
+        """Return a Gemini client that auto-manages Google's ``cachedContents``
+        resource lifecycle so repeat calls with the same static prefix reuse
+        the cache (≈75% input-token discount, plus a small storage fee).
+
+        Drop-in for ``shield.genai()``. The first call with a new prefix runs
+        at normal latency and asynchronously creates the cache resource; the
+        next call (and every subsequent one within the TTL window) uses the
+        cached prefix. The workspace switch in Caching settings governs
+        whether the resource reference reaches Google.
+        """
+        from .providers.genai import build_cached_client
+        return build_cached_client(
+            self,
+            passthrough=passthrough,
+            ttl_seconds=ttl_seconds,
+            min_prefix_tokens=min_prefix_tokens,
+            **kwargs,
+        )
+
     def langchain(self, model: str = "gpt-4o-mini", **kwargs: Any):
         from .providers.langchain import build_client
         return build_client(self, model=model, **kwargs)
@@ -185,6 +223,106 @@ class DeepintShield:
     def pydanticai(self, model: str = "gpt-4o-mini", **kwargs: Any):
         from .providers.pydanticai import build_agent
         return build_agent(self, model=model, **kwargs)
+
+    # ─────────────────────────── agentic (PDP) surface ───────────────────────
+
+    @property
+    def agentic(self):
+        """``shield.agentic`` — tool-call enforcement (decide / @tool / per-
+        framework wrappers). All Entra/identity/policy detail is auto-
+        discovered from the gateway; the user passes only VK + base_url."""
+        if self._agentic is None:
+            from .agentic.surface import AgenticSurface
+            self._agentic = AgenticSurface(self)
+        return self._agentic
+
+    def _install_agentic_guards(self) -> None:
+        """Install non-bypassable framework guards (compile/tool patches). Lazy
+        engine via ``self.agentic.engine`` so this never builds the surface here.
+        Best-effort: never raises, only touches already-imported frameworks."""
+        try:
+            from .agentic.enforcement import install_all
+
+            install_all(lambda: self.agentic.engine)
+        except Exception:
+            pass
+
+    def _agent_token(self) -> str | None:
+        """Best-effort agent identity token for transparent (L1) traffic.
+        Never raises — identity is a strengthening signal, not required."""
+        try:
+            return self.agentic.engine.agent_token()
+        except Exception:
+            return None
+
+    # ───────────────────── transparent transport (L1) ────────────────────────
+
+    def connection(
+        self,
+        *,
+        provider: str = "openai",
+        identity: bool = False,
+        extra: Mapping[str, str] | None = None,
+    ) -> tuple[str, dict[str, str]]:
+        """Return ``(base_url, headers)`` to point any native framework client
+        at the gateway. ``provider`` picks the route ("openai", "anthropic",
+        "genai", …); ``identity=True`` also attaches an agent token."""
+        from .transport import connection
+        return connection(self, provider=provider, identity=identity, extra=extra)
+
+    def create_headers(
+        self,
+        *,
+        provider: str = "openai",
+        identity: bool = False,
+        extra: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
+        """Return just the gateway header set (VK + attribution [+ identity]).
+
+        Parity helper for the Portkey-style ``createHeaders`` ergonomic — drop
+        it into any client's ``default_headers``/``extra_headers`` and point
+        ``base_url`` at ``shield.endpoint(provider)``::
+
+            OpenAI(base_url=shield.endpoint("openai"),
+                   api_key=shield.api_key(),
+                   default_headers=shield.create_headers())
+        """
+        from .transport import connection_headers
+        return connection_headers(self, identity=identity, extra=extra)
+
+    def http_client(
+        self,
+        *,
+        provider: str = "openai",
+        identity: bool = False,
+        base_url: str | None = None,
+        extra: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ):
+        """Return an ``httpx.Client`` pre-wired to the gateway (base URL +
+        VK + attribution headers). Hand it to any SDK that accepts one."""
+        from .transport import http_client
+        return http_client(
+            self, provider=provider, identity=identity, base_url=base_url, extra=extra, timeout=timeout
+        )
+
+    def bind(self, framework: str):
+        """Return a :class:`FrameworkBinder` for ``framework`` (e.g.
+        ``shield.bind("langgraph").model("gpt-4o-mini")``)."""
+        from .frameworks import get_binder
+        return get_binder(self, framework)
+
+    def crewai(self):
+        return self.bind("crewai")
+
+    def openai_agents(self):
+        return self.bind("openai_agents")
+
+    def llamaindex(self):
+        return self.bind("llamaindex")
+
+    def autogen(self):
+        return self.bind("autogen")
 
     # ─────────────────────────── HTTP + guardrails ───────────────────────────
 

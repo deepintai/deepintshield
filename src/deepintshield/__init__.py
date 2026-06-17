@@ -18,6 +18,20 @@ Traffic defaults to ``https://app.deepintshield.com``. Override per-call with
 environment variable when using ``DeepintShield.from_env()``.
 """
 
+from .agentic import (
+    AgenticSurface,
+    ContextBag,
+    Decision,
+    DelegationContext,
+    GatewayUnavailable,
+    GuardrailApprovalPending,
+    GuardrailDenied,
+    GuardrailMasked,
+    Verdict,
+    VKCredentialInfo,
+    set_default_client,
+    shield_tool,
+)
 from .client import DeepintShield
 from .config import DEFAULT_BASE_URL, ShieldConfig
 from .errors import DeepintShieldBlockedError, DeepintShieldError
@@ -57,4 +71,17 @@ __all__ = [
     "allowed_chunk_ids",
     "build_chunk",
     "filter_chunks",
+    # ── agentic (PDP) layer ──
+    "AgenticSurface",
+    "shield_tool",
+    "set_default_client",
+    "Verdict",
+    "Decision",
+    "DelegationContext",
+    "ContextBag",
+    "VKCredentialInfo",
+    "GuardrailDenied",
+    "GuardrailApprovalPending",
+    "GuardrailMasked",
+    "GatewayUnavailable",
 ]
