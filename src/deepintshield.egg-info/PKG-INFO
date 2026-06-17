@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: deepintshield
-Version: 2.3.0
+Version: 2.4.0
 Summary: Unified Python SDK for routing chat, RAG, agentic tool-gating, identity, and MCP traffic through DeepintShield — drop-in across the top agentic frameworks.
 Author: DeepintShield
 License: Apache-2.0
@@ -71,7 +71,7 @@ Dynamic: license-file
 
 # deepintshield
 
-Unified Python SDK for DeepintShield — one import, any provider, any agent framework.
+Unified Python SDK for DeepintShield - one import, any provider, any agent framework.
 
 `deepintshield` lets you keep writing idiomatic OpenAI / Anthropic / Bedrock /
 Google GenAI code **and** native agent-framework code (LangGraph, CrewAI,
@@ -79,20 +79,20 @@ OpenAI Agents SDK, LlamaIndex, AutoGen, PydanticAI) while automatically routing
 traffic through the DeepintShield gateway for guardrails, RAG filtering, agentic
 tool control, and agent identity.
 
-You pass **only two things — a virtual key and a base URL.** Everything else —
-the Entra / ZeroID / OIDC identity binding, tenant, scopes, and policy — is
+You pass **only two things - a virtual key and a base URL.** Everything else -
+the Entra / ZeroID / OIDC identity binding, tenant, scopes, and policy - is
 discovered from the gateway automatically. No identity GUIDs ever appear in your
 code.
 
 Protection comes in two layers:
 
-- **Transparent** — point any framework's *native* client at the gateway
+- **Transparent** - point any framework's *native* client at the gateway
   (`base_url` + a one-line header injector). Chat, embeddings, input/output and
   RAG-prompt guardrails, observability and identity all run server-side with
   **zero changes** to your agent code. Works for Python frameworks *and* any
   OpenAI-compatible platform (n8n, Flowise, Dify, raw HTTP).
-- **Enforcement** — one wrapping line adds local **tool gating** (DENY /
-  MASK / human approval) and **chunk-level RAG filtering** — the parts that
+- **Enforcement** - one wrapping line adds local **tool gating** (DENY /
+  MASK / human approval) and **chunk-level RAG filtering** - the parts that
   physically can't be done at the wire because the tool runs in your process.
 
 Traffic defaults to **`https://app.deepintshield.com`**. Override the gateway
@@ -126,7 +126,7 @@ pip install 'deepintshield[all]'                # everything
 
 ```bash
 export DEEPINTSHIELD_VIRTUAL_KEY="sk-..."
-# Optional — point at a self-hosted or staging gateway.
+# Optional - point at a self-hosted or staging gateway.
 export DEEPINTSHIELD_BASE_URL="https://gateway.example.com"
 ```
 
@@ -251,7 +251,7 @@ allowed, raw = shield.rag.filter(query="What's the badge rule?", chunks=chunks)
 ### Guard a framework retriever (post-retrieval, one line)
 
 Wrap any LangChain / LlamaIndex retriever so unauthorised chunks are dropped
-*after* retrieval and *before* they reach the LLM — ACL/provenance filtering
+*after* retrieval and *before* they reach the LLM - ACL/provenance filtering
 your retriever can't do itself:
 
 ```python
@@ -269,7 +269,7 @@ embedder.embed_query("text")                              # raises if the gatewa
 ```
 
 > If you obtain your embedder from a framework binder (below), input-side
-> screening already happens server-side — `guard_embedder` is for embedders you
+> screening already happens server-side - `guard_embedder` is for embedders you
 > don't route through the gateway.
 
 ---
@@ -292,7 +292,7 @@ shield.autogen().model_client("gpt-4o-mini")     # OpenAIChatCompletionClient
 shield.pydanticai().model("gpt-4o-mini")
 ```
 
-Framework-agnostic primitives — wire any SDK, in any language-compatible
+Framework-agnostic primitives - wire any SDK, in any language-compatible
 client, by hand:
 
 ```python
@@ -302,23 +302,23 @@ headers = shield.create_headers(provider="anthropic")   # Portkey-style header i
 ```
 
 > **Universal:** anything that speaks OpenAI-compatible HTTP gets transparent
-> protection with *zero code* — set the Base URL to `shield.endpoint("openai")`
+> protection with *zero code* - set the Base URL to `shield.endpoint("openai")`
 > and the key to your VK. That covers n8n, Flowise, Dify and raw HTTP, not just
 > Python.
 
 ## Agentic tool enforcement
 
 The part a base URL can't do: gate **local** tool execution. Each gated call
-runs `decide()` first and the verdict maps to a Python outcome — `ALLOW` runs
+runs `decide()` first and the verdict maps to a Python outcome - `ALLOW` runs
 the body, `MASK` redacts PII kwargs, `REQUIRE_APPROVAL` blocks for a human, and
 `DENY` raises `GuardrailDenied`.
 
-### Zero extra code — enforcement is automatic and non-bypassable
+### Zero extra code - enforcement is automatic and non-bypassable
 
 The moment you construct `DeepintShield(...)`, the SDK installs guards for every
 agent framework you've imported (LangGraph, CrewAI, LlamaIndex, AutoGen,
 PydanticAI, the OpenAI Agents SDK, LiteLLM). After that, **compiling / building
-an agent yields an already-governed object** — you can't forget to gate it and
+an agent yields an already-governed object** - you can't forget to gate it and
 you can't bypass it by invoking the un-governed one (there isn't one).
 
 ```python
@@ -334,7 +334,7 @@ g = StateGraph(State)
 g.add_node("read_step", crm_read)
 g.add_node("admin_step", admin_grant)
 ...
-app = g.compile()                      # auto-governed — every node now gated by the PDP
+app = g.compile()                      # auto-governed - every node now gated by the PDP
 
 app.invoke({...})                      # a DENY raises GuardrailDenied before the node runs
 ```
@@ -345,32 +345,32 @@ If you import a framework *after* building the client, call
 > **Security follows the implementation, not the label.** Each node/tool is
 > governed by its **function name** (`crm_read`), not the node label
 > (`read_step`), and the decision is bound to a fingerprint of the function's
-> **source** — so editing the body is detected and policies target `crm_read`.
+> **source** - so editing the body is detected and policies target `crm_read`.
 >
 > **Trust boundary:** these client guards are cooperative defense-in-depth. A
 > determined process can un-patch them or call a tool's raw function, so the
 > gateway (MCP / LLM in the call path) remains the authoritative boundary.
 
-### `govern()` — register + threat-scan + instrument (explicit, idempotent)
+### `govern()` - register + threat-scan + instrument (explicit, idempotent)
 
 `govern()` does everything the auto-guard does, explicitly: it **describes** the
 agent's declared tool surface, **registers** that blueprint with the server
-(which **threat-scans each tool's source** for RCE / shell-out / exfiltration —
-OWASP Agentic **T11 / T17** — server-side, ZDR), and **instruments** every call.
+(which **threat-scans each tool's source** for RCE / shell-out / exfiltration -
+OWASP Agentic **T11 / T17** - server-side, ZDR), and **instruments** every call.
 
 ```python
-app = shield.agentic.govern(app)       # idempotent — safe alongside the auto-guard
+app = shield.agentic.govern(app)       # idempotent - safe alongside the auto-guard
 ```
 
 A tool whose source scans malicious is flagged (Agentic → Findings) and, when
-the workspace enables **Enforce code threat** (Rollout), denied — even if a
+the workspace enables **Enforce code threat** (Rollout), denied - even if a
 policy would otherwise allow it. A tool called but never declared shows up as
 **ASI04 drift** under Agentic → Discovery.
 
-### `guard()` — LangChain callback / in-place instrument
+### `guard()` - LangChain callback / in-place instrument
 
 `shield.agentic.guard()` (no argument) returns a native LangChain callback
-handler; attaching it once gates *every* tool the agent calls — the framework
+handler; attaching it once gates *every* tool the agent calls - the framework
 supplies the tool name and the **gateway resolves the tier, policy, recovery
 cost and identity server-side**.
 
@@ -382,7 +382,7 @@ agent_executor.invoke({"input": "…"}, config={"callbacks": [guard]})
 `guard(target)` auto-detects and instruments a framework object in place:
 
 ```python
-shield.agentic.guard(compiled_graph)   # LangGraph — gate every tool node
+shield.agentic.guard(compiled_graph)   # LangGraph - gate every tool node
 shield.agentic.guard(crewai_tools)     # CrewAI BaseTools
 shield.agentic.guard(openai_agent)     # OpenAI Agents FunctionTools
 shield.agentic.guard(pydantic_agent)   # PydanticAI agent
@@ -435,7 +435,7 @@ When the virtual key is bound to an identity provider, the SDK auto-discovers
 the binding (`GET /api/agentic-security/vk-credential-info`), selects the right
 credential (Entra Agent ID FIC / ZeroID RFC 8693 / generic OIDC), and attaches a
 fresh `X-Agent-Token` on every decision. On Azure compute the Managed Identity
-is detected automatically — **no GUIDs, authority, or scopes in your code.**
+is detected automatically - **no GUIDs, authority, or scopes in your code.**
 
 ```python
 info = shield.agentic.credential_info     # ops visibility into the binding
@@ -473,7 +473,7 @@ app = graph.compile()
 ## Multimodal guardrails (transparent)
 
 Image generation, image edits, audio (TTS / transcription), video, embedding and
-rerank requests are guarded **at the gateway** — no SDK changes and no extra code.
+rerank requests are guarded **at the gateway** - no SDK changes and no extra code.
 Keep using the native provider SDKs through DeepIntShield; when the operator
 enables `GUARDRAILS_MULTIMODAL`, the gateway evaluates the text these requests
 already carry (image/TTS/video prompts, transcripts) and the binary artifacts
@@ -482,7 +482,7 @@ themselves, blocking or flagging per your policies.
 ```python
 client = shield.openai()
 
-# Guarded automatically — the image prompt is evaluated before generation.
+# Guarded automatically - the image prompt is evaluated before generation.
 img = client.images.generate(model="gpt-image-1", prompt="a serene mountain lake")
 
 # A blocked prompt surfaces as the provider SDK's normal HTTP error:
@@ -501,7 +501,7 @@ enforcing (`sync`) or observe-only (`shadow`).
 
 ## MCP
 
-Generic MCP support — works with any server connected to your DeepintShield
+Generic MCP support - works with any server connected to your DeepintShield
 gateway. No per-server SDK code; the same `Tool` / `MCPClient` API serves
 DeepWiki, Context7, GitHub MCP, an internal one, and so on.
 
@@ -596,7 +596,7 @@ print(AgentExecutor(agent=agent, tools=mcp_tools).invoke(
 )["output"])
 ```
 
-LangGraph reuses the same `mcp_tools` list — drop them into a `ToolNode`.
+LangGraph reuses the same `mcp_tools` list - drop them into a `ToolNode`.
 
 ---
 
@@ -605,16 +605,16 @@ LangGraph reuses the same `mcp_tools` list — drop them into a `ToolNode`.
 The SDK automatically participates in the gateway's two cost-reduction layers
 (both controlled by workspace switches under **Cost Optimization**):
 
-- **Provider prompt caching** — every chat client returned by `shield.openai()`,
+- **Provider prompt caching** - every chat client returned by `shield.openai()`,
   `shield.anthropic()`, etc. ships an `httpx` request hook that injects
   Anthropic `cache_control` markers and an OpenAI `prompt_cache_key` so the
   provider reuses KV state for the static prompt prefix. Cached tokens come
   back at the provider's reduced rate (50% off OpenAI, 90% off Anthropic).
-- **Gemini context caching** — opt in with `shield.genai_cached()` (drop-in
+- **Gemini context caching** - opt in with `shield.genai_cached()` (drop-in
   for `shield.genai()`). The wrapper manages the `cachedContents` resource
   lifecycle behind the scenes; the first call with a new static prefix runs
   normally and the next call within the TTL window reuses the cache.
-- **Semantic caching** — runs on the gateway; short-circuits requests whose
+- **Semantic caching** - runs on the gateway; short-circuits requests whose
   embeddings match a previous response within the configured similarity
   threshold. The SDK doesn't need any code change to benefit; results flow
   back through the normal API.
